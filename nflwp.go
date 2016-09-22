@@ -1,8 +1,10 @@
 package nflwp
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -31,6 +33,45 @@ func (a AllTeamData) AddData(OtherData AllTeamData) {
 	}
 }
 
+// Given a probability and actual spread, find an estimated spread
+func NewSpread(prob, spread float64) float64 {
+	count := 0
+	estimatedSpread := spread
+	computedWinProb := WinProbability(spread)
+	for math.Abs(computedWinProb-prob) > .001 && count < 1000 {
+		if prob > computedWinProb {
+			estimatedSpread -= 0.1
+		} else {
+			estimatedSpread += 0.1
+		}
+		computedWinProb = WinProbability(estimatedSpread)
+		count++
+	}
+	return estimatedSpread
+}
+
+// Used to calculate cdf(x)
+func erfc(x float64) float64 {
+	z := math.Abs(x)
+	t := 1 / (1 + z/2)
+	r := t * math.Exp(-z*z-1.26551223+t*(1.00002368+t*(0.37409196+t*(0.09678418+t*(-0.18628806+t*(0.27886807+t*(-1.13520398+t*(1.48851587+t*(-0.82215223+t*0.17087277)))))))))
+	if x >= 0 {
+		return r
+	} else {
+		return 2 - r
+	}
+}
+
+// Return cdf(x) for the normal distribution based on pro-football-reference win probability.
+func cdf(x, mean float64) float64 {
+	return 0.5 * erfc(-(x-mean)/(13.45*math.Sqrt(2)))
+}
+
+// Given a spread, calculate the win probability based on pro-football-reference.
+func WinProbability(spread float64) float64 {
+	return 1 - cdf(0.5, -spread) + 0.5*(cdf(0.5, -spread)-cdf(-0.5, -spread))
+}
+
 // Given a haystack and two needles, return a slice containing all text occuring between
 // needle1 and needle2
 // Returns nil on error or if nothing is found.
@@ -40,7 +81,7 @@ func FindAllBetween(Haystack []byte, Needle1, Needle2 string) []string {
 		fmt.Println("Error: ", err)
 		return nil
 	}
-	RepsonseBytes := regex.FindAll([]byte(Haystack), -1)
+	RepsonseBytes := regex.FindAll(Haystack, -1)
 	if RepsonseBytes == nil {
 		fmt.Printf("Nothing found with haystack=%v, needle1=%v, and needle2=%v", string(Haystack), Needle1, Needle2)
 		return nil
@@ -171,6 +212,88 @@ func GetTeamDataForYear(Year string, StopAtWeek int) AllTeamData {
 		}
 		TeamData.AddData(ThisWeek)
 		Week++
+	}
+	return TeamData
+}
+
+// Translate team names from FootballLocks to pro-football-reference.
+func GetPFRTeamAbbr(TeamName string) string {
+	return map[string]string{
+		"Texans":     "HTX",
+		"Patriots":   "NWE",
+		"Bengals":    "CIN",
+		"Broncos":    "DEN",
+		"Titans":     "OTI",
+		"Raiders":    "RAI",
+		"Cardinals":  "CRD",
+		"Bills":      "BUF",
+		"Ravens":     "RAV",
+		"Jaguars":    "JAX",
+		"Dolphins":   "MIA",
+		"Browns":     "CLE",
+		"Giants":     "NYG",
+		"Redskins":   "WAS",
+		"Packers":    "GNB",
+		"Lions":      "DET",
+		"Panthers":   "CAR",
+		"Vikings":    "MIN",
+		"Seahawks":   "SEA",
+		"49ers":      "SFO",
+		"Buccaneers": "TAM",
+		"Rams":       "RAM",
+		"Steelers":   "PIT",
+		"Eagles":     "PHI",
+		"Chiefs":     "KAN",
+		"Jets":       "NYJ",
+		"Colts":      "CLT",
+		"Chargers":   "SDG",
+		"Cowboys":    "DAL",
+		"Bears":      "CHI",
+		"Saints":     "NOR",
+		"Falcons":    "ATL",
+	}[TeamName]
+}
+
+// Given a completed AllTeamVariable, add the current betting lines from FootballLocks
+// and calculate the win probability.
+func GetCurrentSpreadsAndWinProb(TeamData AllTeamData) AllTeamData {
+	url := "https://fantasydata.com/nfl-stats/nfl-point-spreads-and-odds.aspx"
+	response, err := http.Get(url)
+	defer response.Body.Close()
+	if err != nil {
+		fmt.Println("Error: ", err)
+		return nil
+	}
+	body, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		fmt.Println("Error: ", err)
+		return nil
+	}
+	Index := bytes.Index(body, []byte("StatsGrid"))
+	body = body[Index:]
+	Index = bytes.Index(body, []byte("<tbody>"))
+	body = body[Index:]
+	Index = bytes.Index(body, []byte("</tbody>"))
+	body = body[:Index]
+	TableData := FindAllBetween(body, "<td>", "</td>")
+	for i := 0; i < len(TableData); i += 6 {
+		Favorite := strings.Replace(string(TableData[i]), "at ", "", 1)
+		Dog := strings.Replace(string(TableData[i+2]), "at ", "", 1)
+		Favorite = strings.Replace(Favorite, "<td>", "", 1)
+		Favorite = strings.Replace(Favorite, "</td>", "", 1)
+		Favorite = GetPFRTeamAbbr(Favorite)
+		Dog = strings.Replace(Dog, "<td>", "", 1)
+		Dog = strings.Replace(Dog, "</td>", "", 1)
+		Dog = GetPFRTeamAbbr(Dog)
+		TableData[i+1] = strings.Replace(TableData[i+1], "<td>", "", 1)
+		TableData[i+1] = strings.Replace(TableData[i+1], "</td>", "", 1)
+		Spread, err := strconv.ParseFloat(TableData[i+1], 64)
+		if err != nil {
+			fmt.Println("ERROR: Problem getting the spreads.")
+			return TeamData
+		}
+		TeamData[Favorite] = append(TeamData[Favorite], Spread)
+		TeamData[Dog] = append(TeamData[Dog], -Spread)
 	}
 	return TeamData
 }
