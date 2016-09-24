@@ -34,17 +34,17 @@ func (a AllTeamData) AddData(OtherData AllTeamData) {
 }
 
 // Given a probability and actual spread, find an estimated spread
-func NewSpread(prob, spread float64) float64 {
+func NewSpread(prob, spread, stdev float64) float64 {
 	count := 0
 	estimatedSpread := spread
-	computedWinProb := WinProbability(spread)
+	computedWinProb := WinProbability(0, spread, stdev)
 	for math.Abs(computedWinProb-prob) > .001 && count < 1000 {
 		if prob > computedWinProb {
 			estimatedSpread -= 0.1
 		} else {
 			estimatedSpread += 0.1
 		}
-		computedWinProb = WinProbability(estimatedSpread)
+		computedWinProb = WinProbability(0, estimatedSpread, stdev)
 		count++
 	}
 	return estimatedSpread
@@ -63,13 +63,13 @@ func erfc(x float64) float64 {
 }
 
 // Return cdf(x) for the normal distribution based on pro-football-reference win probability.
-func cdf(x, mean float64) float64 {
-	return 0.5 * erfc(-(x-mean)/(13.45*math.Sqrt(2)))
+func cdf(x, mean, stdev float64) float64 {
+	return 0.5 * erfc(-(x-mean)/(stdev*math.Sqrt(2)))
 }
 
 // Given a spread, calculate the win probability based on pro-football-reference.
-func WinProbability(spread float64) float64 {
-	return 1 - cdf(0.5, -spread) + 0.5*(cdf(0.5, -spread)-cdf(-0.5, -spread))
+func WinProbability(scoreDiff, spread, stdev float64) float64 {
+	return 1 - cdf(scoreDiff+0.5, -spread, stdev) + 0.5*(cdf(scoreDiff+0.5, -spread, stdev)-cdf(scoreDiff-0.5, -spread, stdev))
 }
 
 // Given a haystack and two needles, return a slice containing all text occuring between
