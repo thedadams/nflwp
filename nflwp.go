@@ -150,9 +150,10 @@ func GetTeamNames(HTML string) (string, string) {
 func GetDataForGameLink(Link string) AllTeamData {
 	var HomeTeam, VisitingTeam string
 	var StartingPercent, ThisPercent float64
+	var err error
 	var TeamData AllTeamData = make(map[string][]float64)
 	url := "http://www.pro-football-reference.com" + Link
-	body = CheckFileExists("NFL"+strings.Replace(Link, "/", "-", -1), url)
+	body := CheckFileExists("NFL"+strings.Replace(Link, "/", "-", -1), url)
 	VisitingTeam, HomeTeam = GetTeamNames(string(body))
 	Data := FindAllBetween(body, "var chartData = ", "\n")
 	if Data == nil {
@@ -201,7 +202,7 @@ func GetDataForGameLink(Link string) AllTeamData {
 func GetTeamDataForWeek(Year, Week string) AllTeamData {
 	var TeamData AllTeamData = make(map[string][]float64)
 	url := "http://www.pro-football-reference.com/years/" + Year + "/week_" + Week + ".htm"
-	body = CheckFileExists("NFL-"+Year+"-Week"+Week, url)
+	body := CheckFileExists("NFL-"+Year+"-Week"+Week, url)
 	GameURLs := FindAllBetween(body, "gamelink[^h]*href=\"", "\">")
 	for _, val := range GameURLs {
 		ThisGameLink := FindAllBetween([]byte(val), "/boxscores", ".htm")
