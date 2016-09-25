@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"math"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -93,6 +94,49 @@ func FindAllBetween(Haystack []byte, Needle1, Needle2 string) []string {
 	return ResponseStrings
 }
 
+func CheckFileExists(filename, url string) []byte {
+	var body []byte
+	// First we check to see if we have already downloaded this file.
+	file, err := os.Open(filename)
+	if err != nil {
+		if os.IsNotExist(err) {
+			response, err := http.Get(url)
+			defer response.Body.Close()
+			if err != nil {
+				fmt.Println("Error: ", err)
+				return nil
+			}
+			body, err = ioutil.ReadAll(response.Body)
+			if err != nil {
+				fmt.Println("Error: ", err)
+				return nil
+			}
+			file, err = os.Create(filename)
+			defer file.Close()
+			if err != nil {
+				fmt.Println("ERROR: We fetched the data, but there was a problem creating the file.")
+				return nil
+			}
+			_, err = file.Write(body)
+			if err != nil {
+				fmt.Println("ERROR: Cannot write to file for some reason.")
+				return nil
+			}
+		} else {
+			fmt.Println("ERROR: Problem opening file.")
+			return nil
+		}
+	} else {
+		body, err = ioutil.ReadAll(file)
+		if err != nil {
+			fmt.Println("ERROR: Cannot read the file for some reason.")
+			return nil
+		}
+		file.Close()
+	}
+	return body
+}
+
 // Given the HTML text of a gamelink, we get the team abbreviations
 func GetTeamNames(HTML string) (string, string) {
 	WhereToStartLooking := strings.Index(HTML, "vAxis")
@@ -108,17 +152,7 @@ func GetDataForGameLink(Link string) AllTeamData {
 	var StartingPercent, ThisPercent float64
 	var TeamData AllTeamData = make(map[string][]float64)
 	url := "http://www.pro-football-reference.com" + Link
-	response, err := http.Get(url)
-	defer response.Body.Close()
-	if err != nil {
-		fmt.Println("Error: ", err)
-		return nil
-	}
-	body, err := ioutil.ReadAll(response.Body)
-	if err != nil {
-		fmt.Println("Error: ", err)
-		return nil
-	}
+	body = CheckFileExists("NFL"+strings.Replace(Link, "/", "-", -1), url)
 	VisitingTeam, HomeTeam = GetTeamNames(string(body))
 	Data := FindAllBetween(body, "var chartData = ", "\n")
 	if Data == nil {
@@ -167,17 +201,7 @@ func GetDataForGameLink(Link string) AllTeamData {
 func GetTeamDataForWeek(Year, Week string) AllTeamData {
 	var TeamData AllTeamData = make(map[string][]float64)
 	url := "http://www.pro-football-reference.com/years/" + Year + "/week_" + Week + ".htm"
-	response, err := http.Get(url)
-	defer response.Body.Close()
-	if err != nil {
-		fmt.Println("Error: ", err)
-		return nil
-	}
-	body, err := ioutil.ReadAll(response.Body)
-	if err != nil {
-		fmt.Println("Error: ", err)
-		return nil
-	}
+	body = CheckFileExists("NFL-"+Year+"-Week"+Week, url)
 	GameURLs := FindAllBetween(body, "gamelink[^h]*href=\"", "\">")
 	for _, val := range GameURLs {
 		ThisGameLink := FindAllBetween([]byte(val), "/boxscores", ".htm")
