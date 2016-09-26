@@ -12,6 +12,14 @@ import (
 	"strings"
 )
 
+const (
+	WPADJUST = iota
+	GAMESPLAYED
+	GAMESWON
+	OPPWPADJUST
+	SPREAD
+)
+
 type SingleGameInfo struct {
 	HomeTeam     string
 	VisitingTeam string
@@ -20,17 +28,26 @@ type SingleGameInfo struct {
 
 type AllTeamData map[string][]float64
 
+func NewAllTeamData() AllTeamData {
+	return make(map[string][]float64)
+}
+
+func NewTeamData() []float64 {
+	TeamData := make([]float64, 4)
+	for i := 0; i < len(TeamData); i++ {
+		TeamData[i] = 0.0
+	}
+	return TeamData
+}
+
 func (a AllTeamData) AddData(OtherData AllTeamData) {
 	for key, val := range OtherData {
 		if _, ok := a[key]; !ok {
-			a[key] = make([]float64, 3)
-			a[key][0] = 0.0
-			a[key][1] = 0.0
-			a[key][2] = 0.0
+			a[key] = NewTeamData()
 		}
-		a[key][0] += val[0]
-		a[key][1] += val[1]
-		a[key][2] += val[2]
+		for i := 0; i < len(val); i++ {
+			a[key][i] += val[i]
+		}
 	}
 }
 
@@ -147,18 +164,18 @@ func GetTeamNames(HTML string) (string, string) {
 }
 
 // Given a link in the format "/boxscore/YYYYMMDD0aaa.htm", we find the data for the given game.
-func GetDataForGameLink(Link string) AllTeamData {
+func GetDataForGameLink(Link string) (AllTeamData, string, string) {
 	var HomeTeam, VisitingTeam string
 	var StartingPercent, ThisPercent float64
 	var err error
-	var TeamData AllTeamData = make(map[string][]float64)
+	var TeamData AllTeamData = NewAllTeamData()
 	url := "http://www.pro-football-reference.com" + Link
 	body := CheckFileExists("NFL"+strings.Replace(Link, "/", "-", -1), url)
 	VisitingTeam, HomeTeam = GetTeamNames(string(body))
 	Data := FindAllBetween(body, "var chartData = ", "\n")
 	if Data == nil {
 		fmt.Println("We didn't find the data we need on the provided page so we can't return anything")
-		return nil
+		return nil, "", ""
 	}
 	Data[0] = strings.Replace(Data[0], "var chartData = ", "", -1)
 	Data = strings.Split(Data[0][2:len(Data[0])-2], "],[")
@@ -168,39 +185,34 @@ func GetDataForGameLink(Link string) AllTeamData {
 			StartingPercent, err = strconv.ParseFloat(ThisPlay[1], 64)
 			if err != nil {
 				fmt.Println("Error: ", err)
-				return nil
+				return nil, "", ""
 			}
-			TeamData[HomeTeam] = make([]float64, 3)
-			TeamData[HomeTeam][0] = 0.0
-			TeamData[HomeTeam][1] = 1.0
-			TeamData[HomeTeam][2] = 0.0
-			TeamData[VisitingTeam] = make([]float64, 3)
-			TeamData[VisitingTeam][0] = 0.0
-			TeamData[VisitingTeam][1] = 1.0
-			TeamData[VisitingTeam][2] = 0.0
+			TeamData[HomeTeam] = NewTeamData()
+			TeamData[HomeTeam][GAMESPLAYED] = 1.0
+			TeamData[VisitingTeam] = NewTeamData()
+			TeamData[VisitingTeam][GAMESPLAYED] = 1.0
 		}
 		ThisPercent, err = strconv.ParseFloat(ThisPlay[1], 64)
 		if err != nil {
 			fmt.Println("Error: ", err)
-			return nil
+			return nil, "", ""
 		}
-		TeamData[HomeTeam][0] += ThisPercent
-		TeamData[VisitingTeam][0] += 1.0 - ThisPercent
+		TeamData[HomeTeam][WPADJUST] += ThisPercent
+		TeamData[VisitingTeam][WPADJUST] += 1.0 - ThisPercent
 	}
-	TeamData[HomeTeam][0] = (TeamData[HomeTeam][0] / float64(len(Data))) - StartingPercent
-	TeamData[VisitingTeam][0] = (TeamData[VisitingTeam][0] / float64(len(Data))) - 1.0 + StartingPercent
+	TeamData[HomeTeam][WPADJUST] = (TeamData[HomeTeam][WPADJUST] / float64(len(Data))) - StartingPercent
+	TeamData[VisitingTeam][WPADJUST] = (TeamData[VisitingTeam][WPADJUST] / float64(len(Data))) - 1.0 + StartingPercent
 	if ThisPercent == 1.0 {
-		TeamData[HomeTeam][2] += 1
+		TeamData[HomeTeam][GAMESWON] += 1
 	} else {
-		TeamData[VisitingTeam][2] += 1
+		TeamData[VisitingTeam][GAMESWON] += 1
 	}
-	return TeamData
+	return TeamData, VisitingTeam, HomeTeam
 }
 
 // Given a year and week number, returns an AllTeamData with the week's numbers.
 // If we incure an error, nil is returned.
-func GetTeamDataForWeek(Year, Week string) AllTeamData {
-	var TeamData AllTeamData = make(map[string][]float64)
+func GetTeamDataForWeek(TeamData AllTeamData, Year, Week string) {
 	url := "http://www.pro-football-reference.com/years/" + Year + "/week_" + Week + ".htm"
 	body := CheckFileExists("NFL-"+Year+"-Week"+Week, url)
 	GameURLs := FindAllBetween(body, "gamelink[^h]*href=\"", "\">")
@@ -210,32 +222,27 @@ func GetTeamDataForWeek(Year, Week string) AllTeamData {
 			fmt.Println("Cannot find a game link in", val)
 			continue
 		}
-		ThisGame := GetDataForGameLink(ThisGameLink[0])
+		ThisGame, VisitingTeam, HomeTeam := GetDataForGameLink(ThisGameLink[0])
 		if ThisGame == nil {
 			fmt.Println("Error getting game data for link", ThisGameLink[0])
 			continue
 		}
+		if strings.Compare(Week, "1") != 0 {
+			ThisGame[VisitingTeam][OPPWPADJUST] += TeamData[HomeTeam][WPADJUST] / TeamData[HomeTeam][GAMESPLAYED]
+			ThisGame[HomeTeam][OPPWPADJUST] += TeamData[VisitingTeam][WPADJUST] / TeamData[VisitingTeam][GAMESPLAYED]
+		}
 		TeamData.AddData(ThisGame)
 	}
-	return TeamData
 }
 
 // Given a year, returns an AllTeamData with the year's numbers
 // If StopAtWeek > 0, then we stop gathering data after that week
 // If we incure an error, nil is returned
 func GetTeamDataForYear(Year string, StopAtWeek int) AllTeamData {
-	var TeamData AllTeamData = make(map[string][]float64)
+	var TeamData AllTeamData = NewAllTeamData()
 	Week := 1
 	for StopAtWeek < 0 || Week <= StopAtWeek {
-		ThisWeek := GetTeamDataForWeek(Year, strconv.Itoa(Week))
-		if ThisWeek == nil {
-			fmt.Println("Error getting week link for year", Year, "and week", Week)
-			if Week > 10 {
-				break
-			}
-			continue
-		}
-		TeamData.AddData(ThisWeek)
+		GetTeamDataForWeek(TeamData, Year, strconv.Itoa(Week))
 		Week++
 	}
 	return TeamData
