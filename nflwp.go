@@ -18,6 +18,7 @@ const (
 	GAMESWON
 	OPPWPADJUST
 	SPREAD
+	STDDEV = 13.45
 )
 
 type SingleGameInfo struct {
@@ -33,10 +34,11 @@ func NewAllTeamData() AllTeamData {
 }
 
 func NewTeamData() []float64 {
-	TeamData := make([]float64, 4)
-	for i := 0; i < len(TeamData); i++ {
+	TeamData := make([]float64, 5)
+	for i := 0; i < len(TeamData)-1; i++ {
 		TeamData[i] = 0.0
 	}
+	TeamData[SPREAD] = -100
 	return TeamData
 }
 
@@ -61,6 +63,23 @@ func NewSpread(prob, spread, stdev float64) float64 {
 			estimatedSpread -= 0.1
 		} else {
 			estimatedSpread += 0.1
+		}
+		computedWinProb = WinProbability(0, estimatedSpread, stdev)
+		count++
+	}
+	return estimatedSpread
+}
+
+// Given a probability, find an estimated spread
+func GuessSpread(prob, stdev float64) float64 {
+	count := 0
+	estimatedSpread := 0.0
+	computedWinProb := 0.5
+	for math.Abs(computedWinProb-prob) > .001 && count < 1000 {
+		if prob > computedWinProb {
+			estimatedSpread -= 0.5
+		} else {
+			estimatedSpread += 0.5
 		}
 		computedWinProb = WinProbability(0, estimatedSpread, stdev)
 		count++
@@ -154,6 +173,42 @@ func CheckFileExists(filename, url string) []byte {
 	return body
 }
 
+// Given the spread of a game and the info for a given play,
+// calculate the probability the spread predicts at this point of the game
+func FindAdjustedStartingProbability(Spread float64, PlayInfo string, PreviousAdjustment float64) float64 {
+	var err error
+	var Index int
+	var Quarter, MinsRemaining, Tmp float64
+	TotalMins := 60.0
+	if strings.Compare(string(PlayInfo[1]), "O") == 0 {
+		TotalMins += 15.0
+		Quarter = 4
+	} else {
+		Quarter, err = strconv.ParseFloat(string(PlayInfo[2]), 64)
+		if err != nil {
+			if strings.Compare(PlayInfo, "null") != 0 {
+				fmt.Println("ERROR1: ", err, PlayInfo)
+			}
+			return PreviousAdjustment
+		}
+	}
+	PlayInfo = PlayInfo[4:]
+	Index = strings.Index(PlayInfo, ":")
+	Tmp, err = strconv.ParseFloat(PlayInfo[:Index], 64)
+	if err != nil {
+		fmt.Println("ERROR2: ", err, PlayInfo)
+		return WinProbability(0, Spread, STDDEV/math.Sqrt(TotalMins/((5.0-Quarter)*15.0)))
+	}
+	MinsRemaining = Tmp
+	Tmp, err = strconv.ParseFloat(PlayInfo[Index+1:Index+3], 64)
+	if err != nil {
+		fmt.Println("ERROR3: ", err, PlayInfo)
+		return WinProbability(0, Spread, STDDEV/math.Sqrt(TotalMins/((4.0-Quarter)*15.0+MinsRemaining)))
+	}
+	MinsRemaining += Tmp / 60.0
+	return WinProbability(0, Spread, STDDEV/math.Sqrt(TotalMins/((4.0-Quarter)*15.0+MinsRemaining)))
+}
+
 // Given the HTML text of a gamelink, we get the team abbreviations
 func GetTeamNames(HTML string) (string, string) {
 	WhereToStartLooking := strings.Index(HTML, "vAxis")
@@ -166,7 +221,7 @@ func GetTeamNames(HTML string) (string, string) {
 // Given a link in the format "/boxscore/YYYYMMDD0aaa.htm", we find the data for the given game.
 func GetDataForGameLink(Link string) (AllTeamData, string, string) {
 	var HomeTeam, VisitingTeam string
-	var StartingPercent, ThisPercent float64
+	var StartingPercent, ThisPercent, GuessedSpread, ThisPercentAdjustment float64
 	var err error
 	var TeamData AllTeamData = NewAllTeamData()
 	url := "http://www.pro-football-reference.com" + Link
@@ -187,6 +242,7 @@ func GetDataForGameLink(Link string) (AllTeamData, string, string) {
 				fmt.Println("Error: ", err)
 				return nil, "", ""
 			}
+			GuessedSpread = GuessSpread(StartingPercent, STDDEV)
 			TeamData[HomeTeam] = NewTeamData()
 			TeamData[HomeTeam][GAMESPLAYED] = 1.0
 			TeamData[VisitingTeam] = NewTeamData()
@@ -197,11 +253,12 @@ func GetDataForGameLink(Link string) (AllTeamData, string, string) {
 			fmt.Println("Error: ", err)
 			return nil, "", ""
 		}
-		TeamData[HomeTeam][WPADJUST] += ThisPercent
-		TeamData[VisitingTeam][WPADJUST] += 1.0 - ThisPercent
+		ThisPercentAdjustment = FindAdjustedStartingProbability(GuessedSpread, ThisPlay[2], ThisPercentAdjustment)
+		TeamData[HomeTeam][WPADJUST] += ThisPercent - ThisPercentAdjustment
+		TeamData[VisitingTeam][WPADJUST] += ThisPercentAdjustment - ThisPercent
 	}
-	TeamData[HomeTeam][WPADJUST] = (TeamData[HomeTeam][WPADJUST] / float64(len(Data))) - StartingPercent
-	TeamData[VisitingTeam][WPADJUST] = (TeamData[VisitingTeam][WPADJUST] / float64(len(Data))) - 1.0 + StartingPercent
+	TeamData[HomeTeam][WPADJUST] = (TeamData[HomeTeam][WPADJUST] / float64(len(Data)))
+	TeamData[VisitingTeam][WPADJUST] = (TeamData[VisitingTeam][WPADJUST] / float64(len(Data)))
 	if ThisPercent == 1.0 {
 		TeamData[HomeTeam][GAMESWON] += 1
 	} else {
@@ -321,11 +378,11 @@ func GetCurrentSpreadsAndWinProb(TeamData AllTeamData) AllTeamData {
 		TableData[i+1] = strings.Replace(TableData[i+1], "</td>", "", 1)
 		Spread, err := strconv.ParseFloat(TableData[i+1], 64)
 		if err != nil {
-			fmt.Println("ERROR: Problem getting the spreads.")
-			return TeamData
+			fmt.Printf("It seems that the line for the %v vs %v game is not available because we got %v for the line.\n", Favorite, Dog, TableData[i+1])
+		} else {
+			TeamData[Favorite][SPREAD] = Spread
+			TeamData[Dog][SPREAD] = -Spread
 		}
-		TeamData[Favorite] = append(TeamData[Favorite], Spread)
-		TeamData[Dog] = append(TeamData[Dog], -Spread)
 	}
 	return TeamData
 }
