@@ -14,10 +14,13 @@ import (
 
 const (
 	WPADJUST = iota
+	STRAIGHTWPADJUST
 	GAMESPLAYED
 	GAMESWON
 	OPPWPADJUST
 	SPREAD
+	PLAYINGTHISWEEK
+	TOTALDATAPOINTS
 	STDDEV = 13.45
 )
 
@@ -34,7 +37,7 @@ func NewAllTeamData() AllTeamData {
 }
 
 func NewTeamData() []float64 {
-	TeamData := make([]float64, 5)
+	TeamData := make([]float64, TOTALDATAPOINTS)
 	for i := 0; i < len(TeamData)-1; i++ {
 		TeamData[i] = 0.0
 	}
@@ -256,9 +259,13 @@ func GetDataForGameLink(Link string) (AllTeamData, string, string) {
 		ThisPercentAdjustment = FindAdjustedStartingProbability(GuessedSpread, ThisPlay[2], ThisPercentAdjustment)
 		TeamData[HomeTeam][WPADJUST] += ThisPercent - ThisPercentAdjustment
 		TeamData[VisitingTeam][WPADJUST] += ThisPercentAdjustment - ThisPercent
+		TeamData[HomeTeam][STRAIGHTWPADJUST] += ThisPercent - 0.5
+		TeamData[VisitingTeam][STRAIGHTWPADJUST] += 0.5 - ThisPercent
 	}
 	TeamData[HomeTeam][WPADJUST] = (TeamData[HomeTeam][WPADJUST] / float64(len(Data)))
 	TeamData[VisitingTeam][WPADJUST] = (TeamData[VisitingTeam][WPADJUST] / float64(len(Data)))
+	TeamData[HomeTeam][STRAIGHTWPADJUST] /= float64(len(Data))
+	TeamData[VisitingTeam][STRAIGHTWPADJUST] /= float64(len(Data))
 	if ThisPercent == 1.0 {
 		TeamData[HomeTeam][GAMESWON] += 1
 	} else {
@@ -297,6 +304,7 @@ func GetTeamDataForWeek(TeamData AllTeamData, Year, Week string) {
 // If we incure an error, nil is returned
 func GetTeamDataForYear(Year string, StopAtWeek int) AllTeamData {
 	var TeamData AllTeamData = NewAllTeamData()
+	TeamData["BYE"] = NewTeamData()
 	Week := 1
 	for StopAtWeek < 0 || Week <= StopAtWeek {
 		GetTeamDataForWeek(TeamData, Year, strconv.Itoa(Week))
@@ -308,39 +316,117 @@ func GetTeamDataForYear(Year string, StopAtWeek int) AllTeamData {
 // Translate team names from FootballLocks to pro-football-reference.
 func GetPFRTeamAbbr(TeamName string) string {
 	return map[string]string{
-		"Texans":     "HTX",
-		"Patriots":   "NWE",
-		"Bengals":    "CIN",
-		"Broncos":    "DEN",
-		"Titans":     "OTI",
-		"Raiders":    "RAI",
-		"Cardinals":  "CRD",
-		"Bills":      "BUF",
-		"Ravens":     "RAV",
-		"Jaguars":    "JAX",
-		"Dolphins":   "MIA",
-		"Browns":     "CLE",
-		"Giants":     "NYG",
-		"Redskins":   "WAS",
-		"Packers":    "GNB",
-		"Lions":      "DET",
-		"Panthers":   "CAR",
-		"Vikings":    "MIN",
-		"Seahawks":   "SEA",
-		"49ers":      "SFO",
-		"Buccaneers": "TAM",
-		"Rams":       "RAM",
-		"Steelers":   "PIT",
-		"Eagles":     "PHI",
-		"Chiefs":     "KAN",
-		"Jets":       "NYJ",
-		"Colts":      "CLT",
-		"Chargers":   "SDG",
-		"Cowboys":    "DAL",
-		"Bears":      "CHI",
-		"Saints":     "NOR",
-		"Falcons":    "ATL",
+		"TEXANS":     "HTX",
+		"PATRIOTS":   "NWE",
+		"BENGALS":    "CIN",
+		"BRONCOS":    "DEN",
+		"TITANS":     "OTI",
+		"RAIDERS":    "RAI",
+		"CARDINALS":  "CRD",
+		"BILLS":      "BUF",
+		"RAVENS":     "RAV",
+		"JAGUARS":    "JAX",
+		"DOLPHINS":   "MIA",
+		"BROWNS":     "CLE",
+		"GIANTS":     "NYG",
+		"REDSKINS":   "WAS",
+		"PACKERS":    "GNB",
+		"LIONS":      "DET",
+		"PANTHERS":   "CAR",
+		"VIKINGS":    "MIN",
+		"SEAHAWKS":   "SEA",
+		"49ERS":      "SFO",
+		"BUCCANEERS": "TAM",
+		"RAMS":       "RAM",
+		"STEELERS":   "PIT",
+		"EAGLES":     "PHI",
+		"CHIEFS":     "KAN",
+		"JETS":       "NYJ",
+		"COLTS":      "CLT",
+		"CHARGERS":   "SDG",
+		"COWBOYS":    "DAL",
+		"BEARS":      "CHI",
+		"SAINTS":     "NOR",
+		"FALCONS":    "ATL",
 	}[TeamName]
+}
+
+// This function returns a float for storage in the TeamData type
+func GetTeamAbbrFromFloat(Index float64) string {
+	return map[float64]string{
+		0:  "BYE",
+		1:  "HTX",
+		2:  "NWE",
+		3:  "CIN",
+		4:  "DEN",
+		5:  "OTI",
+		6:  "RAI",
+		7:  "CRD",
+		8:  "BUF",
+		9:  "RAV",
+		10: "JAX",
+		11: "MIA",
+		12: "CLE",
+		13: "NYG",
+		14: "WAS",
+		15: "GNB",
+		16: "DET",
+		17: "CAR",
+		18: "MIN",
+		19: "SEA",
+		20: "SFO",
+		21: "TAM",
+		22: "RAM",
+		23: "PIT",
+		24: "PHI",
+		25: "KAN",
+		26: "NYJ",
+		27: "CLT",
+		28: "SDG",
+		29: "DAL",
+		30: "CHI",
+		31: "NOR",
+		32: "ATL",
+	}[Index]
+}
+
+// This function returns the team abbreviation from a float64 stored in the TeamData type
+func GetTeamFloatFromAbbr(Abbr string) float64 {
+	return map[string]float64{
+		"BYE": 0,
+		"HTX": 1,
+		"NWE": 2,
+		"CIN": 3,
+		"DEN": 4,
+		"OTI": 5,
+		"RAI": 6,
+		"CRD": 7,
+		"BUF": 8,
+		"RAV": 9,
+		"JAX": 10,
+		"MIA": 11,
+		"CLE": 12,
+		"NYG": 13,
+		"WAS": 14,
+		"GNB": 15,
+		"DET": 16,
+		"CAR": 17,
+		"MIN": 18,
+		"SEA": 19,
+		"SFO": 20,
+		"TAM": 21,
+		"RAM": 22,
+		"PIT": 23,
+		"PHI": 24,
+		"KAN": 25,
+		"NYJ": 26,
+		"CLT": 27,
+		"SDG": 28,
+		"DAL": 29,
+		"CHI": 30,
+		"NOR": 31,
+		"ATL": 32,
+	}[Abbr]
 }
 
 // Given a completed AllTeamVariable, add the current betting lines from FootballLocks
@@ -370,10 +456,10 @@ func GetCurrentSpreadsAndWinProb(TeamData AllTeamData) AllTeamData {
 		Dog := strings.Replace(string(TableData[i+2]), "at ", "", 1)
 		Favorite = strings.Replace(Favorite, "<td>", "", 1)
 		Favorite = strings.Replace(Favorite, "</td>", "", 1)
-		Favorite = GetPFRTeamAbbr(Favorite)
+		Favorite = GetPFRTeamAbbr(strings.ToUpper(Favorite))
 		Dog = strings.Replace(Dog, "<td>", "", 1)
 		Dog = strings.Replace(Dog, "</td>", "", 1)
-		Dog = GetPFRTeamAbbr(Dog)
+		Dog = GetPFRTeamAbbr(strings.ToUpper(Dog))
 		TableData[i+1] = strings.Replace(TableData[i+1], "<td>", "", 1)
 		TableData[i+1] = strings.Replace(TableData[i+1], "</td>", "", 1)
 		Spread, err := strconv.ParseFloat(TableData[i+1], 64)
@@ -382,6 +468,8 @@ func GetCurrentSpreadsAndWinProb(TeamData AllTeamData) AllTeamData {
 		} else {
 			TeamData[Favorite][SPREAD] = Spread
 			TeamData[Dog][SPREAD] = -Spread
+			TeamData[Favorite][PLAYINGTHISWEEK] = GetTeamFloatFromAbbr(Dog)
+			TeamData[Dog][PLAYINGTHISWEEK] = GetTeamFloatFromAbbr(Favorite)
 		}
 	}
 	return TeamData
