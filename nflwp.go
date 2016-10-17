@@ -435,8 +435,8 @@ func GetTeamFloatFromAbbr(Abbr string) float64 {
 // This takes the spread information I scraped from scoresandodds.com and
 // creates data to use with a machine learning algorithm
 func CreateDataFromSpreadFiles(Sport string) {
-	YearToStart := 2015
-	YearToStop := 2015
+	YearToStart := 2008
+	YearToStop := 2014
 	FileToWrite, _ := os.Create(Sport + "WPData.txt")
 	defer FileToWrite.Close()
 	for YearToStart <= YearToStop {
@@ -473,7 +473,7 @@ func CreateDataFromSpreadFiles(Sport string) {
 						Spread = -Spread
 					}
 				}
-				fmt.Println("/boxscores/" + DateString + "0" + strings.ToLower(HomeTeam) + ".htm")
+				StartingWP := WinProbability(0, Spread, STDDEV)
 				ThisGame, VisitingTeam, _ := GetDataForGameLink("/boxscores/" + DateString + "0" + strings.ToLower(HomeTeam) + ".htm")
 				if ThisGame == nil {
 					fmt.Println("Error getting game data for link", DateString+strings.ToLower(HomeTeam)+".htm")
@@ -481,13 +481,13 @@ func CreateDataFromSpreadFiles(Sport string) {
 				}
 				if _, ok := TeamData[HomeTeam]; ok {
 					if TeamData[HomeTeam][GAMESPLAYED] > 1 {
-						FileToWrite.Write([]byte(strconv.FormatFloat(TeamData[HomeTeam][STRAIGHTWPADJUST]/TeamData[HomeTeam][GAMESPLAYED], 'f', -1, 64)))
+						FileToWrite.Write([]byte(strconv.FormatFloat(NewSpread(0.5+TeamData[HomeTeam][STRAIGHTWPADJUST]/TeamData[HomeTeam][GAMESPLAYED], 0, STDDEV), 'f', -1, 64)))
 						FileToWrite.Write([]byte(","))
-						FileToWrite.Write([]byte(strconv.FormatFloat(TeamData[HomeTeam][WPADJUST]/TeamData[HomeTeam][GAMESPLAYED], 'f', -1, 64)))
+						FileToWrite.Write([]byte(strconv.FormatFloat(NewSpread(StartingWP+TeamData[HomeTeam][WPADJUST]/TeamData[HomeTeam][GAMESPLAYED], Spread, STDDEV), 'f', -1, 64)))
 						FileToWrite.Write([]byte(","))
-						FileToWrite.Write([]byte(strconv.FormatFloat(TeamData[HomeTeam][OPPWPADJUST]/TeamData[HomeTeam][GAMESPLAYED], 'f', -1, 64)))
+						FileToWrite.Write([]byte(strconv.FormatFloat(NewSpread(StartingWP+TeamData[HomeTeam][OPPWPADJUST]/TeamData[HomeTeam][GAMESPLAYED], Spread, STDDEV), 'f', -1, 64)))
 						FileToWrite.Write([]byte(","))
-						FileToWrite.Write([]byte(strconv.FormatFloat(0.5+(TeamData[HomeTeam][STRAIGHTWPADJUST]/TeamData[HomeTeam][GAMESPLAYED]-TeamData[VisitingTeam][OPPWPADJUST]/(TeamData[VisitingTeam][GAMESPLAYED]-1)), 'f', -1, 64)))
+						FileToWrite.Write([]byte(strconv.FormatFloat(NewSpread(0.5+(TeamData[HomeTeam][STRAIGHTWPADJUST]/TeamData[HomeTeam][GAMESPLAYED]-TeamData[VisitingTeam][OPPWPADJUST]/(TeamData[VisitingTeam][GAMESPLAYED]-1)), 0, STDDEV), 'f', -1, 64)))
 						FileToWrite.Write([]byte(","))
 						FileToWrite.Write([]byte("1"))
 						FileToWrite.Write([]byte(","))
@@ -498,17 +498,17 @@ func CreateDataFromSpreadFiles(Sport string) {
 						} else if HomeScore-VisitingScore+Spread < 0 {
 							FileToWrite.Write([]byte("0"))
 						} else {
-							FileToWrite.Write([]byte("0.5"))
+							FileToWrite.Write([]byte("2"))
 						}
 						FileToWrite.Write([]byte("\n"))
 
-						FileToWrite.Write([]byte(strconv.FormatFloat(TeamData[VisitingTeam][STRAIGHTWPADJUST]/TeamData[VisitingTeam][GAMESPLAYED], 'f', -1, 64)))
+						FileToWrite.Write([]byte(strconv.FormatFloat(NewSpread(0.5+TeamData[VisitingTeam][STRAIGHTWPADJUST]/TeamData[VisitingTeam][GAMESPLAYED], 0, STDDEV), 'f', -1, 64)))
 						FileToWrite.Write([]byte(","))
-						FileToWrite.Write([]byte(strconv.FormatFloat(TeamData[VisitingTeam][WPADJUST]/TeamData[VisitingTeam][GAMESPLAYED], 'f', -1, 64)))
+						FileToWrite.Write([]byte(strconv.FormatFloat(NewSpread(StartingWP+TeamData[VisitingTeam][WPADJUST]/TeamData[VisitingTeam][GAMESPLAYED], -Spread, STDDEV), 'f', -1, 64)))
 						FileToWrite.Write([]byte(","))
-						FileToWrite.Write([]byte(strconv.FormatFloat(TeamData[VisitingTeam][OPPWPADJUST]/TeamData[VisitingTeam][GAMESPLAYED], 'f', -1, 64)))
+						FileToWrite.Write([]byte(strconv.FormatFloat(NewSpread(StartingWP+TeamData[VisitingTeam][OPPWPADJUST]/TeamData[VisitingTeam][GAMESPLAYED], -Spread, STDDEV), 'f', -1, 64)))
 						FileToWrite.Write([]byte(","))
-						FileToWrite.Write([]byte(strconv.FormatFloat(0.5+(TeamData[VisitingTeam][STRAIGHTWPADJUST]/TeamData[VisitingTeam][GAMESPLAYED]-TeamData[HomeTeam][OPPWPADJUST]/(TeamData[HomeTeam][GAMESPLAYED]-1)), 'f', -1, 64)))
+						FileToWrite.Write([]byte(strconv.FormatFloat(NewSpread(0.5+(TeamData[VisitingTeam][STRAIGHTWPADJUST]/TeamData[VisitingTeam][GAMESPLAYED]-TeamData[HomeTeam][OPPWPADJUST]/(TeamData[HomeTeam][GAMESPLAYED]-1)), 0, STDDEV), 'f', -1, 64)))
 						FileToWrite.Write([]byte(","))
 						FileToWrite.Write([]byte("0"))
 						FileToWrite.Write([]byte(","))
@@ -519,7 +519,7 @@ func CreateDataFromSpreadFiles(Sport string) {
 						} else if HomeScore-VisitingScore+Spread > 0 {
 							FileToWrite.Write([]byte("0"))
 						} else {
-							FileToWrite.Write([]byte("0.5"))
+							FileToWrite.Write([]byte("2"))
 						}
 						FileToWrite.Write([]byte("\n"))
 					}
