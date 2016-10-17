@@ -222,6 +222,40 @@ func GetTeamNames(HTML string) (string, string) {
 	return SplitAtQuote[1], SplitAtQuote[len(SplitAtQuote)-2]
 }
 
+// Peek ahead to get the spreads for next week.
+func PeekAheadForSpreads(TeamData AllTeamData, Year, Week string) AllTeamData {
+	var HomeTeam, VisitingTeam string
+	url := "http://www.pro-football-reference.com/years/" + Year + "/week_" + Week + ".htm"
+	body := CheckFileExists("NFL-"+Year+"-Week"+Week, url)
+	GameURLs := FindAllBetween(body, "gamelink[^h]*href=\"", "\">")
+	for _, val := range GameURLs {
+		ThisGameLink := FindAllBetween([]byte(val), "/boxscores", ".htm")
+		if ThisGameLink == nil {
+			fmt.Println("Cannot find a game link in ", val)
+			continue
+		}
+		url := "http://www.pro-football-reference.com" + ThisGameLink[0]
+		body := CheckFileExists("NFL"+strings.Replace(ThisGameLink[0], "/", "-", -1), url)
+		VisitingTeam, HomeTeam = GetTeamNames(string(body))
+		Data := FindAllBetween(body, "var chartData = ", "\n")
+		if Data == nil {
+			fmt.Println("We didn't find the data we need on the provided page so we can't return anything")
+			return TeamData
+		}
+		Data[0] = strings.Replace(Data[0], "var chartData = ", "", -1)
+		ThisPlay := strings.Split(strings.Split(Data[0][2:len(Data[0])-2], "],[")[0], ",")
+		StartingPercent, err := strconv.ParseFloat(ThisPlay[1], 64)
+		if err != nil {
+			fmt.Println("Error: ", err)
+			return TeamData
+		}
+		GuessedSpread := GuessSpread(StartingPercent, STDDEV)
+		TeamData[HomeTeam][SPREAD] = GuessedSpread
+		TeamData[VisitingTeam][SPREAD] = -GuessedSpread
+	}
+	return TeamData
+}
+
 // Given a link in the format "/boxscore/YYYYMMDD0aaa.htm", we find the data for the given game.
 func GetDataForGameLink(Link string) (AllTeamData, string, string) {
 	var HomeTeam, VisitingTeam string
