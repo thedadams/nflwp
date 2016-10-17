@@ -1,6 +1,7 @@
 package nflwp
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io/ioutil"
@@ -227,6 +228,7 @@ func GetDataForGameLink(Link string) (AllTeamData, string, string) {
 	var StartingPercent, ThisPercent, GuessedSpread, ThisPercentAdjustment float64
 	var err error
 	var TeamData AllTeamData = NewAllTeamData()
+	HaveTeamNames := false
 	url := "http://www.pro-football-reference.com" + Link
 	body := CheckFileExists("NFL"+strings.Replace(Link, "/", "-", -1), url)
 	VisitingTeam, HomeTeam = GetTeamNames(string(body))
@@ -239,7 +241,7 @@ func GetDataForGameLink(Link string) (AllTeamData, string, string) {
 	Data = strings.Split(Data[0][2:len(Data[0])-2], "],[")
 	for _, val := range Data {
 		ThisPlay := strings.Split(val, ",")
-		if strings.Compare(ThisPlay[0], "1") == 0 {
+		if !HaveTeamNames {
 			StartingPercent, err = strconv.ParseFloat(ThisPlay[1], 64)
 			if err != nil {
 				fmt.Println("Error: ", err)
@@ -250,6 +252,7 @@ func GetDataForGameLink(Link string) (AllTeamData, string, string) {
 			TeamData[HomeTeam][GAMESPLAYED] = 1.0
 			TeamData[VisitingTeam] = NewTeamData()
 			TeamData[VisitingTeam][GAMESPLAYED] = 1.0
+			HaveTeamNames = true
 		}
 		ThisPercent, err = strconv.ParseFloat(ThisPlay[1], 64)
 		if err != nil {
@@ -427,6 +430,108 @@ func GetTeamFloatFromAbbr(Abbr string) float64 {
 		"NOR": 31,
 		"ATL": 32,
 	}[Abbr]
+}
+
+// This takes the spread information I scraped from scoresandodds.com and
+// creates data to use with a machine learning algorithm
+func CreateDataFromSpreadFiles(Sport string) {
+	YearToStart := 2015
+	YearToStop := 2015
+	FileToWrite, _ := os.Create(Sport + "WPData.txt")
+	defer FileToWrite.Close()
+	for YearToStart <= YearToStop {
+		var TeamData AllTeamData = NewAllTeamData()
+		if strings.Compare(Sport, "Football") == 0 {
+			TeamData["BYE"] = NewTeamData()
+		}
+		file, err := os.Open(strconv.Itoa(YearToStart) + Sport + "OddsAndScores.txt")
+		if err != nil {
+			fmt.Printf("ERROR: error reading file for year %v and sport %v\n", YearToStart, Sport)
+			file.Close()
+			return
+		}
+		scan := bufio.NewScanner(file)
+		for scan.Scan() {
+			Games := strings.Split(scan.Text(), ",")
+			DateString := Games[0]
+			Games = Games[1 : len(Games)-1]
+			for _, val := range Games {
+				GameData := strings.Split(val, " ")
+				if len(GameData) < 7 {
+					continue
+				}
+				HomeTeam := GetPFRTeamAbbr(GameData[3])
+				VisitingScore, _ := strconv.ParseFloat(GameData[2], 64)
+				HomeScore, _ := strconv.ParseFloat(GameData[5], 64)
+				Spread, _ := strconv.ParseFloat(GameData[1], 64)
+				if Spread < 0 {
+					Spread = -Spread
+				}
+				if Spread < -60 || Spread > 60 {
+					Spread, _ = strconv.ParseFloat(GameData[4], 64)
+					if Spread > 0 {
+						Spread = -Spread
+					}
+				}
+				fmt.Println("/boxscores/" + DateString + "0" + strings.ToLower(HomeTeam) + ".htm")
+				ThisGame, VisitingTeam, _ := GetDataForGameLink("/boxscores/" + DateString + "0" + strings.ToLower(HomeTeam) + ".htm")
+				if ThisGame == nil {
+					fmt.Println("Error getting game data for link", DateString+strings.ToLower(HomeTeam)+".htm")
+					continue
+				}
+				if _, ok := TeamData[HomeTeam]; ok {
+					if TeamData[HomeTeam][GAMESPLAYED] > 1 {
+						FileToWrite.Write([]byte(strconv.FormatFloat(TeamData[HomeTeam][STRAIGHTWPADJUST]/TeamData[HomeTeam][GAMESPLAYED], 'f', -1, 64)))
+						FileToWrite.Write([]byte(","))
+						FileToWrite.Write([]byte(strconv.FormatFloat(TeamData[HomeTeam][WPADJUST]/TeamData[HomeTeam][GAMESPLAYED], 'f', -1, 64)))
+						FileToWrite.Write([]byte(","))
+						FileToWrite.Write([]byte(strconv.FormatFloat(TeamData[HomeTeam][OPPWPADJUST]/TeamData[HomeTeam][GAMESPLAYED], 'f', -1, 64)))
+						FileToWrite.Write([]byte(","))
+						FileToWrite.Write([]byte(strconv.FormatFloat(0.5+(TeamData[HomeTeam][STRAIGHTWPADJUST]/TeamData[HomeTeam][GAMESPLAYED]-TeamData[VisitingTeam][OPPWPADJUST]/(TeamData[VisitingTeam][GAMESPLAYED]-1)), 'f', -1, 64)))
+						FileToWrite.Write([]byte(","))
+						FileToWrite.Write([]byte("1"))
+						FileToWrite.Write([]byte(","))
+						FileToWrite.Write([]byte(strconv.FormatFloat(Spread, 'f', -1, 64)))
+						FileToWrite.Write([]byte(","))
+						if HomeScore-VisitingScore+Spread > 0 {
+							FileToWrite.Write([]byte("1"))
+						} else if HomeScore-VisitingScore+Spread < 0 {
+							FileToWrite.Write([]byte("0"))
+						} else {
+							FileToWrite.Write([]byte("0.5"))
+						}
+						FileToWrite.Write([]byte("\n"))
+
+						FileToWrite.Write([]byte(strconv.FormatFloat(TeamData[VisitingTeam][STRAIGHTWPADJUST]/TeamData[VisitingTeam][GAMESPLAYED], 'f', -1, 64)))
+						FileToWrite.Write([]byte(","))
+						FileToWrite.Write([]byte(strconv.FormatFloat(TeamData[VisitingTeam][WPADJUST]/TeamData[VisitingTeam][GAMESPLAYED], 'f', -1, 64)))
+						FileToWrite.Write([]byte(","))
+						FileToWrite.Write([]byte(strconv.FormatFloat(TeamData[VisitingTeam][OPPWPADJUST]/TeamData[VisitingTeam][GAMESPLAYED], 'f', -1, 64)))
+						FileToWrite.Write([]byte(","))
+						FileToWrite.Write([]byte(strconv.FormatFloat(0.5+(TeamData[VisitingTeam][STRAIGHTWPADJUST]/TeamData[VisitingTeam][GAMESPLAYED]-TeamData[HomeTeam][OPPWPADJUST]/(TeamData[HomeTeam][GAMESPLAYED]-1)), 'f', -1, 64)))
+						FileToWrite.Write([]byte(","))
+						FileToWrite.Write([]byte("0"))
+						FileToWrite.Write([]byte(","))
+						FileToWrite.Write([]byte(strconv.FormatFloat(-Spread, 'f', -1, 64)))
+						FileToWrite.Write([]byte(","))
+						if HomeScore-VisitingScore+Spread < 0 {
+							FileToWrite.Write([]byte("1"))
+						} else if HomeScore-VisitingScore+Spread > 0 {
+							FileToWrite.Write([]byte("0"))
+						} else {
+							FileToWrite.Write([]byte("0.5"))
+						}
+						FileToWrite.Write([]byte("\n"))
+					}
+					ThisGame[VisitingTeam][OPPWPADJUST] += TeamData[HomeTeam][WPADJUST] / TeamData[HomeTeam][GAMESPLAYED]
+					ThisGame[HomeTeam][OPPWPADJUST] += TeamData[VisitingTeam][WPADJUST] / TeamData[VisitingTeam][GAMESPLAYED]
+				}
+				TeamData.AddData(ThisGame)
+			}
+		}
+		file.Close()
+		YearToStart++
+	}
 }
 
 // Given a completed AllTeamVariable, add the current betting lines from FootballLocks
