@@ -222,6 +222,20 @@ func GetTeamNames(HTML string) (string, string) {
 	return SplitAtQuote[1], SplitAtQuote[len(SplitAtQuote)-2]
 }
 
+func GetSpreadFromProFootballPage(body []byte) float64 {
+	IndexOfLine := bytes.Index(body, []byte("Vegas Line"))
+	Spread := 1234
+	if IndexOfLine != -1 {
+		body = body[IndexOfLine : IndexOfLine+bytes.Index(body[IndexOfLine:], []byte("</td>"))]
+		Spread, err := strconv.ParseFloat(string(bytes.Split(body, []byte(" "))[len(bytes.Split(body, []byte(" ")))-1]), 64)
+		if err != nil {
+			fmt.Printf("ERROR: Error getting the spreads for game %v vs. %v\n", VisitingTeam, HomeTeam)
+			return 1234
+		}
+	}
+	return Spread
+}
+
 // Peek ahead to get the spreads for next week.
 func PeekAheadForSpreads(TeamData AllTeamData, Year, Week string) AllTeamData {
 	var HomeTeam, VisitingTeam string
@@ -237,25 +251,11 @@ func PeekAheadForSpreads(TeamData AllTeamData, Year, Week string) AllTeamData {
 		url := "http://www.pro-football-reference.com" + ThisGameLink[0]
 		body := CheckFileExists("NFL"+strings.Replace(ThisGameLink[0], "/", "-", -1), url)
 		VisitingTeam, HomeTeam = GetTeamNames(string(body))
-
-		IndexOfLine := bytes.Index(body, []byte("Vegas Line"))
-		if IndexOfLine == -1 {
-			TeamData[HomeTeam][SPREAD] = -1234
-			TeamData[VisitingTeam][SPREAD] = 1234
-			TeamData[HomeTeam][PLAYINGTHISWEEK] = GetTeamFloatFromAbbr(VisitingTeam)
-			TeamData[VisitingTeam][PLAYINGTHISWEEK] = GetTeamFloatFromAbbr(HomeTeam)
-		} else {
-			body = body[IndexOfLine : IndexOfLine+bytes.Index(body[IndexOfLine:], []byte("</td>"))]
-			Spread, err := strconv.ParseFloat(string(bytes.Split(body, []byte(" "))[len(bytes.Split(body, []byte(" ")))-1]), 64)
-			if err != nil {
-				fmt.Printf("ERROR: Error getting the spreads for game %v vs. %v\n", VisitingTeam, HomeTeam)
-				return TeamData
-			}
-			TeamData[HomeTeam][SPREAD] = Spread
-			TeamData[VisitingTeam][SPREAD] = -Spread
-			TeamData[HomeTeam][PLAYINGTHISWEEK] = GetTeamFloatFromAbbr(VisitingTeam)
-			TeamData[VisitingTeam][PLAYINGTHISWEEK] = GetTeamFloatFromAbbr(HomeTeam)
-		}
+		Spread := GetSpreadFromProFootballPage(body)
+		TeamData[HomeTeam][SPREAD] = Spread
+		TeamData[VisitingTeam][SPREAD] = -Spread
+		TeamData[HomeTeam][PLAYINGTHISWEEK] = GetTeamFloatFromAbbr(VisitingTeam)
+		TeamData[VisitingTeam][PLAYINGTHISWEEK] = GetTeamFloatFromAbbr(HomeTeam)
 	}
 	return TeamData
 }
