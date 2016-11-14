@@ -285,7 +285,7 @@ func GetDataForGameLink(Link string) (AllTeamData, string, string) {
 				fmt.Println("Error: ", err)
 				return nil, "", ""
 			}
-			GuessedSpread = GuessSpread(StartingPercent, STDDEV)
+			GuessedSpread = GetSpreadFromProFootballPage(body)
 			TeamData[HomeTeam] = NewTeamData()
 			TeamData[HomeTeam][GAMESPLAYED] = 1.0
 			TeamData[VisitingTeam] = NewTeamData()
@@ -300,8 +300,8 @@ func GetDataForGameLink(Link string) (AllTeamData, string, string) {
 		ThisPercentAdjustment = FindAdjustedStartingProbability(GuessedSpread, ThisPlay[2], ThisPercentAdjustment)
 		TeamData[HomeTeam][WPADJUST] += ThisPercent - ThisPercentAdjustment
 		TeamData[VisitingTeam][WPADJUST] += ThisPercentAdjustment - ThisPercent
-		TeamData[HomeTeam][STRAIGHTWPADJUST] += ThisPercent - 0.5
-		TeamData[VisitingTeam][STRAIGHTWPADJUST] += 0.5 - ThisPercent
+		TeamData[HomeTeam][STRAIGHTWPADJUST] += ThisPercent - StartingPercent + 0.5
+		TeamData[VisitingTeam][STRAIGHTWPADJUST] += StartingPercent - ThisPercent + 0.5
 	}
 	TeamData[HomeTeam][WPADJUST] = (TeamData[HomeTeam][WPADJUST] / float64(len(Data)))
 	TeamData[VisitingTeam][WPADJUST] = (TeamData[VisitingTeam][WPADJUST] / float64(len(Data)))
