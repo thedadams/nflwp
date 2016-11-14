@@ -222,14 +222,21 @@ func GetTeamNames(HTML string) (string, string) {
 	return SplitAtQuote[1], SplitAtQuote[len(SplitAtQuote)-2]
 }
 
-func GetSpreadFromProFootballPage(body []byte) float64 {
+func GetSpreadFromProFootballPage(body []byte, VisitingTeam, HomeTeam string) float64 {
 	IndexOfLine := bytes.Index(body, []byte("Vegas Line"))
-	Spread := 1234
+	Spread := 1234.0
+	var err error
 	if IndexOfLine != -1 {
 		body = body[IndexOfLine : IndexOfLine+bytes.Index(body[IndexOfLine:], []byte("</td>"))]
-		Spread, err := strconv.ParseFloat(string(bytes.Split(body, []byte(" "))[len(bytes.Split(body, []byte(" ")))-1]), 64)
+		SpreadAsString := string(bytes.Split(body, []byte(" "))[len(bytes.Split(body, []byte(" ")))-1])
+		SpreadAsString = strings.TrimSpace(SpreadAsString)
+		Spread, err = strconv.ParseFloat(SpreadAsString, 64)
 		if err != nil {
-			fmt.Printf("ERROR: Error getting the spreads for game %v vs. %v\n", VisitingTeam, HomeTeam)
+			SpreadAsString = strings.Replace(SpreadAsString, ">", "", 1)
+			if strings.Compare(SpreadAsString, "Pick") == 0 {
+				return 0
+			}
+			fmt.Printf("ERROR: Error getting the spreads for game %v at %v: %v.\n", VisitingTeam, HomeTeam, SpreadAsString)
 			return 1234
 		}
 	}
@@ -251,7 +258,7 @@ func PeekAheadForSpreads(TeamData AllTeamData, Year, Week string) AllTeamData {
 		url := "http://www.pro-football-reference.com" + ThisGameLink[0]
 		body := CheckFileExists("NFL"+strings.Replace(ThisGameLink[0], "/", "-", -1), url)
 		VisitingTeam, HomeTeam = GetTeamNames(string(body))
-		Spread := GetSpreadFromProFootballPage(body)
+		Spread := GetSpreadFromProFootballPage(body, VisitingTeam, HomeTeam)
 		TeamData[HomeTeam][SPREAD] = Spread
 		TeamData[VisitingTeam][SPREAD] = -Spread
 		TeamData[HomeTeam][PLAYINGTHISWEEK] = GetTeamFloatFromAbbr(VisitingTeam)
@@ -285,7 +292,7 @@ func GetDataForGameLink(Link string) (AllTeamData, string, string) {
 				fmt.Println("Error: ", err)
 				return nil, "", ""
 			}
-			GuessedSpread = GetSpreadFromProFootballPage(body)
+			GuessedSpread = GetSpreadFromProFootballPage(body, VisitingTeam, HomeTeam)
 			TeamData[HomeTeam] = NewTeamData()
 			TeamData[HomeTeam][GAMESPLAYED] = 1.0
 			TeamData[VisitingTeam] = NewTeamData()
