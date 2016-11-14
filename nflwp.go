@@ -237,21 +237,25 @@ func PeekAheadForSpreads(TeamData AllTeamData, Year, Week string) AllTeamData {
 		url := "http://www.pro-football-reference.com" + ThisGameLink[0]
 		body := CheckFileExists("NFL"+strings.Replace(ThisGameLink[0], "/", "-", -1), url)
 		VisitingTeam, HomeTeam = GetTeamNames(string(body))
-		Data := FindAllBetween(body, "var chartData = ", "\n")
-		if Data == nil {
-			fmt.Println("We didn't find the data we need on the provided page so we can't return anything")
-			return TeamData
+
+		IndexOfLine := bytes.Index(body, []byte("Vegas Line"))
+		if IndexOfLine == -1 {
+			TeamData[HomeTeam][SPREAD] = -1234
+			TeamData[VisitingTeam][SPREAD] = 1234
+			TeamData[HomeTeam][PLAYINGTHISWEEK] = GetTeamFloatFromAbbr(VisitingTeam)
+			TeamData[VisitingTeam][PLAYINGTHISWEEK] = GetTeamFloatFromAbbr(HomeTeam)
+		} else {
+			body = body[IndexOfLine : IndexOfLine+bytes.Index(body[IndexOfLine:], []byte("</td>"))]
+			Spread, err := strconv.ParseFloat(string(bytes.Split(body, []byte(" "))[len(bytes.Split(body, []byte(" ")))-1]), 64)
+			if err != nil {
+				fmt.Printf("ERROR: Error getting the spreads for game %v vs. %v\n", VisitingTeam, HomeTeam)
+				return TeamData
+			}
+			TeamData[HomeTeam][SPREAD] = Spread
+			TeamData[VisitingTeam][SPREAD] = -Spread
+			TeamData[HomeTeam][PLAYINGTHISWEEK] = GetTeamFloatFromAbbr(VisitingTeam)
+			TeamData[VisitingTeam][PLAYINGTHISWEEK] = GetTeamFloatFromAbbr(HomeTeam)
 		}
-		Data[0] = strings.Replace(Data[0], "var chartData = ", "", -1)
-		ThisPlay := strings.Split(strings.Split(Data[0][2:len(Data[0])-2], "],[")[0], ",")
-		StartingPercent, err := strconv.ParseFloat(ThisPlay[1], 64)
-		if err != nil {
-			fmt.Println("Error: ", err)
-			return TeamData
-		}
-		GuessedSpread := GuessSpread(StartingPercent, STDDEV)
-		TeamData[HomeTeam][SPREAD] = GuessedSpread
-		TeamData[VisitingTeam][SPREAD] = -GuessedSpread
 	}
 	return TeamData
 }
@@ -328,7 +332,9 @@ func GetTeamDataForWeek(TeamData AllTeamData, Year, Week string) {
 			fmt.Println("Error getting game data for link", ThisGameLink[0])
 			continue
 		}
-		if strings.Compare(Week, "1") != 0 {
+		_, ok := TeamData[VisitingTeam]
+		_, ok2 := TeamData[HomeTeam]
+		if ok && ok2 {
 			ThisGame[VisitingTeam][OPPWPADJUST] += TeamData[HomeTeam][WPADJUST] / TeamData[HomeTeam][GAMESPLAYED]
 			ThisGame[HomeTeam][OPPWPADJUST] += TeamData[VisitingTeam][WPADJUST] / TeamData[VisitingTeam][GAMESPLAYED]
 		}
@@ -469,8 +475,8 @@ func GetTeamFloatFromAbbr(Abbr string) float64 {
 // This takes the spread information I scraped from scoresandodds.com and
 // creates data to use with a machine learning algorithm
 func CreateDataFromSpreadFiles(Sport string) {
-	YearToStart := 2008
-	YearToStop := 2014
+	YearToStart := 2015
+	YearToStop := 2015
 	FileToWrite, _ := os.Create(Sport + "WPData.txt")
 	defer FileToWrite.Close()
 	for YearToStart <= YearToStop {
@@ -507,50 +513,28 @@ func CreateDataFromSpreadFiles(Sport string) {
 						Spread = -Spread
 					}
 				}
-				StartingWP := WinProbability(0, Spread, STDDEV)
+				//StartingWP := WinProbability(0, Spread, STDDEV)
 				ThisGame, VisitingTeam, _ := GetDataForGameLink("/boxscores/" + DateString + "0" + strings.ToLower(HomeTeam) + ".htm")
 				if ThisGame == nil {
 					fmt.Println("Error getting game data for link", DateString+strings.ToLower(HomeTeam)+".htm")
 					continue
 				}
 				if _, ok := TeamData[HomeTeam]; ok {
-					if TeamData[HomeTeam][GAMESPLAYED] > 1 {
-						FileToWrite.Write([]byte(strconv.FormatFloat(NewSpread(0.5+TeamData[HomeTeam][STRAIGHTWPADJUST]/TeamData[HomeTeam][GAMESPLAYED], 0, STDDEV), 'f', -1, 64)))
+					if TeamData[HomeTeam][GAMESPLAYED] > 4 {
+						MySpread := TeamData[HomeTeam][WPADJUST]/TeamData[HomeTeam][GAMESPLAYED] - TeamData[VisitingTeam][OPPWPADJUST]/(TeamData[VisitingTeam][GAMESPLAYED]-1)
+						MySpread -= TeamData[VisitingTeam][WPADJUST]/TeamData[VisitingTeam][GAMESPLAYED] - TeamData[HomeTeam][OPPWPADJUST]/(TeamData[HomeTeam][GAMESPLAYED]-1)
+						MySpread += TeamData[HomeTeam][STRAIGHTWPADJUST]/TeamData[HomeTeam][GAMESPLAYED] - TeamData[VisitingTeam][STRAIGHTWPADJUST]/TeamData[VisitingTeam][GAMESPLAYED]
+						MySpread = NewSpread(0.5+MySpread, 0.0, STDDEV)
+						EstSpread := WinProbability(0, Spread, STDDEV) + (TeamData[HomeTeam][WPADJUST] / TeamData[HomeTeam][GAMESPLAYED]) - (TeamData[VisitingTeam][WPADJUST] / TeamData[VisitingTeam][GAMESPLAYED])
+						FileToWrite.Write([]byte(strconv.FormatFloat(MySpread, 'f', -1, 64)))
 						FileToWrite.Write([]byte(","))
-						FileToWrite.Write([]byte(strconv.FormatFloat(NewSpread(StartingWP+TeamData[HomeTeam][WPADJUST]/TeamData[HomeTeam][GAMESPLAYED], Spread, STDDEV), 'f', -1, 64)))
-						FileToWrite.Write([]byte(","))
-						FileToWrite.Write([]byte(strconv.FormatFloat(NewSpread(StartingWP+TeamData[HomeTeam][OPPWPADJUST]/TeamData[HomeTeam][GAMESPLAYED], Spread, STDDEV), 'f', -1, 64)))
-						FileToWrite.Write([]byte(","))
-						FileToWrite.Write([]byte(strconv.FormatFloat(NewSpread(0.5+(TeamData[HomeTeam][STRAIGHTWPADJUST]/TeamData[HomeTeam][GAMESPLAYED]-TeamData[VisitingTeam][OPPWPADJUST]/(TeamData[VisitingTeam][GAMESPLAYED]-1)), 0, STDDEV), 'f', -1, 64)))
-						FileToWrite.Write([]byte(","))
-						FileToWrite.Write([]byte("1"))
+						FileToWrite.Write([]byte(strconv.FormatFloat(EstSpread, 'f', -1, 64)))
 						FileToWrite.Write([]byte(","))
 						FileToWrite.Write([]byte(strconv.FormatFloat(Spread, 'f', -1, 64)))
 						FileToWrite.Write([]byte(","))
 						if HomeScore-VisitingScore+Spread > 0 {
 							FileToWrite.Write([]byte("1"))
 						} else if HomeScore-VisitingScore+Spread < 0 {
-							FileToWrite.Write([]byte("0"))
-						} else {
-							FileToWrite.Write([]byte("2"))
-						}
-						FileToWrite.Write([]byte("\n"))
-
-						FileToWrite.Write([]byte(strconv.FormatFloat(NewSpread(0.5+TeamData[VisitingTeam][STRAIGHTWPADJUST]/TeamData[VisitingTeam][GAMESPLAYED], 0, STDDEV), 'f', -1, 64)))
-						FileToWrite.Write([]byte(","))
-						FileToWrite.Write([]byte(strconv.FormatFloat(NewSpread(StartingWP+TeamData[VisitingTeam][WPADJUST]/TeamData[VisitingTeam][GAMESPLAYED], -Spread, STDDEV), 'f', -1, 64)))
-						FileToWrite.Write([]byte(","))
-						FileToWrite.Write([]byte(strconv.FormatFloat(NewSpread(StartingWP+TeamData[VisitingTeam][OPPWPADJUST]/TeamData[VisitingTeam][GAMESPLAYED], -Spread, STDDEV), 'f', -1, 64)))
-						FileToWrite.Write([]byte(","))
-						FileToWrite.Write([]byte(strconv.FormatFloat(NewSpread(0.5+(TeamData[VisitingTeam][STRAIGHTWPADJUST]/TeamData[VisitingTeam][GAMESPLAYED]-TeamData[HomeTeam][OPPWPADJUST]/(TeamData[HomeTeam][GAMESPLAYED]-1)), 0, STDDEV), 'f', -1, 64)))
-						FileToWrite.Write([]byte(","))
-						FileToWrite.Write([]byte("0"))
-						FileToWrite.Write([]byte(","))
-						FileToWrite.Write([]byte(strconv.FormatFloat(-Spread, 'f', -1, 64)))
-						FileToWrite.Write([]byte(","))
-						if HomeScore-VisitingScore+Spread < 0 {
-							FileToWrite.Write([]byte("1"))
-						} else if HomeScore-VisitingScore+Spread > 0 {
 							FileToWrite.Write([]byte("0"))
 						} else {
 							FileToWrite.Write([]byte("2"))
