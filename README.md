@@ -1,0 +1,4 @@
+# NFL Win Probability Spread Analysis
+[Pro Football Reference](http://www.pro-football-reference.com/) has a win probability model. The interesting things about their model is that it depends on the Vegas spread for a game. The idea I had is that by looking back to see how the win probability changes through a game, you may be able to get an idea of what the "real" spread should have been.
+
+The code included here gathers the information from Pro Football Reference and attempts to calculate how far off the Vegas line was in hopes of predicting how far off they might be in the future. This is simply the data collecting; I am not posting how I am using this data and the adjustments.
