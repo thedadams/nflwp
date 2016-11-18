@@ -25,12 +25,6 @@ const (
 	STDDEV = 13.45
 )
 
-type SingleGameInfo struct {
-	HomeTeam     string
-	VisitingTeam string
-	data         []float64
-}
-
 type AllTeamData map[string][]float64
 
 func NewAllTeamData() AllTeamData {
@@ -42,6 +36,7 @@ func NewTeamData() []float64 {
 	for i := 0; i < len(TeamData)-1; i++ {
 		TeamData[i] = 0.0
 	}
+	// Set the spread to something ridiculous to easily spot buy weeks
 	TeamData[SPREAD] = -100
 	return TeamData
 }
@@ -57,7 +52,8 @@ func (a AllTeamData) AddData(OtherData AllTeamData) {
 	}
 }
 
-// Given a probability and actual spread, find an estimated spread
+// Given an adjusted win probability and the actual spread of a game,
+// find a new adjusted spread
 func NewSpread(prob, spread, stdev float64) float64 {
 	count := 0
 	estimatedSpread := spread
@@ -74,7 +70,7 @@ func NewSpread(prob, spread, stdev float64) float64 {
 	return estimatedSpread
 }
 
-// Given a probability, find an estimated spread
+// Given an opening probability, find an estimated spread based on pro-football.com's win probability model.
 func GuessSpread(prob, stdev float64) float64 {
 	count := 0
 	estimatedSpread := 0.0
@@ -103,7 +99,7 @@ func erfc(x float64) float64 {
 	}
 }
 
-// Return cdf(x) for the normal distribution based on pro-football-reference win probability.
+// Return cdf(x) for the normal distribution
 func cdf(x, mean, stdev float64) float64 {
 	return 0.5 * erfc(-(x-mean)/(stdev*math.Sqrt(2)))
 }
@@ -134,6 +130,9 @@ func FindAllBetween(Haystack []byte, Needle1, Needle2 string) []string {
 	return ResponseStrings
 }
 
+// We want to save time fetching the html.
+// Here we check to see if we already have the file.
+// If not, we go get it and save it to disk.
 func CheckFileExists(filename, url string) []byte {
 	var body []byte
 	// First we check to see if we have already downloaded this file.
@@ -243,7 +242,8 @@ func GetSpreadFromProFootballPage(body []byte, VisitingTeam, HomeTeam string) fl
 	return Spread
 }
 
-// Peek ahead to get the spreads for next week.
+// pro-football-reference.com puts the spreads for the game on the page after the game starts.
+// Here, we peek at the next week to get the spreads.
 func PeekAheadForSpreads(TeamData AllTeamData, Year, Week string) AllTeamData {
 	var HomeTeam, VisitingTeam string
 	url := "http://www.pro-football-reference.com/years/" + Year + "/week_" + Week + ".htm"
@@ -268,6 +268,7 @@ func PeekAheadForSpreads(TeamData AllTeamData, Year, Week string) AllTeamData {
 }
 
 // Given a link in the format "/boxscore/YYYYMMDD0aaa.htm", we find the data for the given game.
+// To save time, we download the html file for later reference.
 func GetDataForGameLink(Link string) (AllTeamData, string, string) {
 	var HomeTeam, VisitingTeam string
 	var StartingPercent, ThisPercent, GuessedSpread, ThisPercentAdjustment float64
@@ -310,8 +311,8 @@ func GetDataForGameLink(Link string) (AllTeamData, string, string) {
 		TeamData[HomeTeam][STRAIGHTWPADJUST] += ThisPercent - StartingPercent + 0.5
 		TeamData[VisitingTeam][STRAIGHTWPADJUST] += StartingPercent - ThisPercent + 0.5
 	}
-	TeamData[HomeTeam][WPADJUST] = (TeamData[HomeTeam][WPADJUST] / float64(len(Data)))
-	TeamData[VisitingTeam][WPADJUST] = (TeamData[VisitingTeam][WPADJUST] / float64(len(Data)))
+	TeamData[HomeTeam][WPADJUST] /= float64(len(Data))
+	TeamData[VisitingTeam][WPADJUST] /= float64(len(Data))
 	TeamData[HomeTeam][STRAIGHTWPADJUST] /= float64(len(Data))
 	TeamData[VisitingTeam][STRAIGHTWPADJUST] /= float64(len(Data))
 	if ThisPercent == 1.0 {
@@ -559,7 +560,7 @@ func CreateDataFromSpreadFiles(Sport string) {
 	}
 }
 
-// Given a completed AllTeamVariable, add the current betting lines from FootballLocks
+// Given a completed AllTeamVariable, we add the current betting lines from FootballLocks
 // and calculate the win probability.
 func GetCurrentSpreadsAndWinProb(TeamData AllTeamData) AllTeamData {
 	url := "https://fantasydata.com/nfl-stats/nfl-point-spreads-and-odds.aspx"
