@@ -14,15 +14,15 @@ import (
 )
 
 const (
-	WPADJUST = iota
-	STRAIGHTWPADJUST
-	GAMESPLAYED
-	GAMESWON
-	OPPWPADJUST
-	SPREAD
-	PLAYINGTHISWEEK
-	TOTALDATAPOINTS
-	STDDEV = 13.45
+	WPADJUST         = iota  // The average difference between what the vegas win probability is and what acutally happened
+	STRAIGHTWPADJUST         // The average difference between what the straight win probability is and what acutally happened
+	GAMESPLAYED              // Games the team has played
+	GAMESWON                 // Games a team has won
+	OPPWPADJUST              // Every game, we add the opponents WPADJUST to the team
+	SPREAD                   // Spread for a team
+	PLAYINGTHISWEEK          // A float64 that indicates who a team is playing this week
+	TOTALDATAPOINTS          // Used to create new TeamData
+	STDDEV           = 13.45 //This comes from pro-football.com's Win Probability model
 )
 
 type AllTeamData map[string][]float64
@@ -184,8 +184,8 @@ func FindAdjustedStartingProbability(Spread float64, PlayInfo string, PreviousAd
 	var Quarter, MinsRemaining, Tmp float64
 	TotalMins := 60.0
 	if strings.Compare(string(PlayInfo[1]), "O") == 0 {
-		TotalMins += 15.0
 		Quarter = 4
+		TotalMins += 15
 	} else {
 		Quarter, err = strconv.ParseFloat(string(PlayInfo[2]), 64)
 		if err != nil {
@@ -206,10 +206,10 @@ func FindAdjustedStartingProbability(Spread float64, PlayInfo string, PreviousAd
 	Tmp, err = strconv.ParseFloat(PlayInfo[Index+1:Index+3], 64)
 	if err != nil {
 		fmt.Println("ERROR3: ", err, PlayInfo)
-		return WinProbability(0, Spread, STDDEV/math.Sqrt(TotalMins/((4.0-Quarter)*15.0+MinsRemaining)))
+		return WinProbability(0, Spread*((4.0-Quarter)*15.0+MinsRemaining)/TotalMins, STDDEV/math.Sqrt(TotalMins/((4.0-Quarter)*15.0+MinsRemaining)))
 	}
-	MinsRemaining += Tmp / 60.0
-	return WinProbability(0, Spread, STDDEV/math.Sqrt(TotalMins/((4.0-Quarter)*15.0+MinsRemaining)))
+	MinsRemaining += Tmp / 60
+	return WinProbability(0, Spread*((4.0-Quarter)*15.0+MinsRemaining)/TotalMins, STDDEV/math.Sqrt(TotalMins/((4.0-Quarter)*15.0+MinsRemaining)))
 }
 
 // Given the HTML text of a gamelink, we get the team abbreviations
