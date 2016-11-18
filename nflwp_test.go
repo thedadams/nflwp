@@ -45,7 +45,7 @@ func TestFindAdjustedStartingProbability(t *testing.T) {
 	infos := []string{"\"Q1 5:00 GNB 0-CHI 0 32.20%\"", "\"Q2 12:00 GNB 0-CHI 0 32.20%\"",
 		"\"Q3 10:00 GNB 0-CHI 0 32.20%\"", "\"Q4 2:00 GNB 0-CHI 0 32.20%\"",
 		"\"Q3 2:00 GNB 0-CHI 0 32.20%\"", "   "}
-	expectedResults := []float64{0.6830, 0.4260, 0.5950, 0.5, 0.3460, 9.0}
+	expectedResults := []float64{0.7160, 0.395, 0.7170, 0.5, 0.0820, 9.0}
 	for i := 0; i < len(spreads); i++ {
 		result := FindAdjustedStartingProbability(spreads[i], infos[i], 9.0)
 		if math.Abs(result-expectedResults[i]) > 0.0005 {

@@ -209,7 +209,8 @@ func FindAdjustedStartingProbability(Spread float64, PlayInfo string, PreviousAd
 		return WinProbability(0, Spread*((4.0-Quarter)*15.0+MinsRemaining)/TotalMins, STDDEV/math.Sqrt(TotalMins/((4.0-Quarter)*15.0+MinsRemaining)))
 	}
 	MinsRemaining += Tmp / 60
-	return WinProbability(0, Spread*((4.0-Quarter)*15.0+MinsRemaining)/TotalMins, STDDEV/math.Sqrt(TotalMins/((4.0-Quarter)*15.0+MinsRemaining)))
+	AdjustmentFactor := TotalMins / ((4.0-Quarter)*15.0 + MinsRemaining)
+	return WinProbability(Spread*(1-(1/AdjustmentFactor)), Spread/AdjustmentFactor, STDDEV/math.Sqrt(AdjustmentFactor))
 }
 
 // Given the HTML text of a gamelink, we get the team abbreviations
