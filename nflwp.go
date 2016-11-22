@@ -37,7 +37,7 @@ func NewTeamData() []float64 {
 		TeamData[i] = 0.0
 	}
 	// Set the spread to something ridiculous to easily spot buy weeks
-	TeamData[SPREAD] = -100
+	TeamData[SPREAD] = 0
 	return TeamData
 }
 
@@ -489,6 +489,7 @@ func CreateDataFromSpreadFiles(Sport string) {
 	FileToWrite, _ := os.Create(Sport + "WPData.txt")
 	defer FileToWrite.Close()
 	for YearToStart <= YearToStop {
+		fmt.Printf("Now compiling stats for %v year...\n", YearToStart)
 		var TeamData AllTeamData = NewAllTeamData()
 		if strings.Compare(Sport, "Football") == 0 {
 			TeamData["BYE"] = NewTeamData()
@@ -529,15 +530,28 @@ func CreateDataFromSpreadFiles(Sport string) {
 					continue
 				}
 				if _, ok := TeamData[HomeTeam]; ok {
-					if TeamData[HomeTeam][GAMESPLAYED] > 4 {
-						MySpread := TeamData[HomeTeam][WPADJUST]/TeamData[HomeTeam][GAMESPLAYED] - TeamData[VisitingTeam][OPPWPADJUST]/(TeamData[VisitingTeam][GAMESPLAYED]-1)
-						MySpread -= TeamData[VisitingTeam][WPADJUST]/TeamData[VisitingTeam][GAMESPLAYED] - TeamData[HomeTeam][OPPWPADJUST]/(TeamData[HomeTeam][GAMESPLAYED]-1)
-						MySpread += TeamData[HomeTeam][STRAIGHTWPADJUST]/TeamData[HomeTeam][GAMESPLAYED] - TeamData[VisitingTeam][STRAIGHTWPADJUST]/TeamData[VisitingTeam][GAMESPLAYED]
-						MySpread = NewSpread(0.5+MySpread, 0.0, STDDEV)
-						EstSpread := WinProbability(0, Spread, STDDEV) + (TeamData[HomeTeam][WPADJUST] / TeamData[HomeTeam][GAMESPLAYED]) - (TeamData[VisitingTeam][WPADJUST] / TeamData[VisitingTeam][GAMESPLAYED])
-						FileToWrite.Write([]byte(strconv.FormatFloat(MySpread, 'f', -1, 64)))
+					if TeamData[HomeTeam][GAMESPLAYED] > 2 {
+						GuessSpread := TeamData[HomeTeam][STRAIGHTWPADJUST]/TeamData[HomeTeam][GAMESPLAYED] - TeamData[VisitingTeam][STRAIGHTWPADJUST]/TeamData[VisitingTeam][GAMESPLAYED]
+						GuessOP := (-TeamData[HomeTeam][OPPWPADJUST]/(TeamData[HomeTeam][GAMESPLAYED]-1) + TeamData[VisitingTeam][OPPWPADJUST]/(TeamData[VisitingTeam][GAMESPLAYED]-1)) / 2
+						GuessWP := (-TeamData[VisitingTeam][WPADJUST]/TeamData[VisitingTeam][GAMESPLAYED] + TeamData[HomeTeam][WPADJUST]/TeamData[HomeTeam][GAMESPLAYED]) / 2
+						GuessBoth := (GuessWP + GuessOP) / 2.0
+						GuessWP = NewSpread(0.5+GuessWP+GuessSpread, 0.0, STDDEV)
+						GuessOP = NewSpread(0.5+GuessOP+GuessSpread, 0.0, STDDEV)
+						GuessBoth = NewSpread(0.5+GuessBoth+GuessSpread, 0.0, STDDEV)
+						GuessSpread = NewSpread(0.5+GuessSpread, 0.0, STDDEV)
+						NewProb := WinProbability(0, TeamData[HomeTeam][SPREAD], STDDEV) + ((TeamData[HomeTeam][WPADJUST]/TeamData[HomeTeam][GAMESPLAYED])-(TeamData[VisitingTeam][WPADJUST]/TeamData[VisitingTeam][GAMESPLAYED]))/2
+						EstSpread := NewSpread(NewProb, TeamData[HomeTeam][SPREAD], STDDEV)
+						FileToWrite.Write([]byte(strconv.FormatFloat(GuessSpread, 'f', -1, 64)))
+						FileToWrite.Write([]byte(","))
+						FileToWrite.Write([]byte(strconv.FormatFloat(GuessWP, 'f', -1, 64)))
+						FileToWrite.Write([]byte(","))
+						FileToWrite.Write([]byte(strconv.FormatFloat(GuessOP, 'f', -1, 64)))
+						FileToWrite.Write([]byte(","))
+						FileToWrite.Write([]byte(strconv.FormatFloat(GuessBoth, 'f', -1, 64)))
 						FileToWrite.Write([]byte(","))
 						FileToWrite.Write([]byte(strconv.FormatFloat(EstSpread, 'f', -1, 64)))
+						FileToWrite.Write([]byte(","))
+						FileToWrite.Write([]byte(strconv.FormatFloat((GuessSpread+GuessWP+GuessOP+GuessBoth+EstSpread)/5, 'f', -1, 64)))
 						FileToWrite.Write([]byte(","))
 						FileToWrite.Write([]byte(strconv.FormatFloat(Spread, 'f', -1, 64)))
 						FileToWrite.Write([]byte(","))
